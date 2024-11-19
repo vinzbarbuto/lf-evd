@@ -1,0 +1,52 @@
+target Python
+
+import Microphone from <edgeai/Input.lf>
+import Camera from <edgeai/Input.lf>
+import ObjectDetector from <edgeai/ComputerVision.lf>
+import AudioClassifier from <edgeai/Audio.lf>
+
+reactor ClassificationFilter{
+    input inf_res
+    output result
+
+    reaction(inf_res) -> result {=
+        print(inf_res.value)
+    =}
+}
+
+reactor AudioModule(dtype="float32") {
+
+    output result
+
+    state model_path = {= os.path.join(os.getcwd(), 
+        "models/audio/evds_bin.tflite"
+    ) =};
+
+    mic = new Microphone(dtype= {=self.dtype=});
+    audioClassifier = new AudioClassifier(
+        model= {=self.model_path=}
+    );
+    filter = new ClassificationFilter();
+    mic.audio_data -> audioClassifier.input_data;
+    audioClassifier.results -> filter.inf_res;
+    filter.result -> result;
+
+}
+
+reactor VisionModule {
+
+}
+
+reactor SensorFusion {
+    input audio_result
+    input vision_result
+
+    output command
+
+    reaction(audio_result, vision_result) -> command {=
+        if(audio_result.is_present):
+            print("Audio: ", audio_result.value)
+        if(vision_result.is_present):
+            print("Vision: ", vision_result.value)
+    =}
+}
