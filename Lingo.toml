@@ -1,0 +1,16 @@
+[package]
+name = "lf-evd"
+version = "0.1.0"
+
+[[app]]
+name = "Main"
+main = "src/Main.lf"
+target = "Python"
+platform = "Native"
+
+[app.properties]
+fast = false
+
+[dependencies]
+
+edgeai = {version = ">=0.4.0", git = "https://github.com/lf-pkgs/edgeai-python.git"}
