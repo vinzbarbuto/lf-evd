@@ -1,5 +1,12 @@
 target Python
 
-main reactor {
-    
+import SensorFusion from "lib/Components.lf"
+import AudioModule from "lib/Components.lf"
+
+
+
+federated reactor {
+    audioModule = new AudioModule();
+    sensorFusion = new SensorFusion();
+    audioModule.result -> sensorFusion.audio_result;
 }
