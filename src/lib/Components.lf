@@ -26,12 +26,12 @@ reactor AudioModule(dtype="float32", consistency_threshold=3, cooldown_period=15
         "models/audio/evds_bin.tflite"
     ) =};
 
-    mic = new Microphone(dtype= {=self.dtype=});
+    mic = new Microphone(dtype= {=self.dtype=}, debug=True);
     audioClassifier = new AudioClassifier(
         model= {=self.model_path=},
         score_threshold=0.7
     );
-    mic.audio_data -> audioClassifier.input_data;
+    mic.audio_data -> audioClassifier.input_data after 0
 
     // ** METHOD CHAIN **
     method validate(detection_score) {=
@@ -101,7 +101,7 @@ reactor VisionModule(camera_id=0, consistency_threshold=3) {
             NEGATIVE = 2
     =}
 
-    camera = new Camera(camera_id={=self.camera_id=}, initial_mode=0, period=100msec);
+    camera = new Camera(camera_id={=self.camera_id=}, active_at_startup=False, sampling_interval=100msec, debug=True);
     obj = new ObjectDetector(
         model={=self.model_path=},
         score_threshold=0.7
@@ -182,12 +182,23 @@ reactor SensorFusion {
     output command
 
     reaction(audio_result, vision_result) -> command {=
-        if(audio_result.is_present and audio_result.value == 1):
-            print(f"[SENSOR FUSION] Received from Audio and Vision")
+        if(audio_result.is_present and vision_result.is_present):
+            res = "Yes" if vision_result.value == 1 else "No"
+            print(f"[SENSOR FUSION] Received from Yes from Audio and {res} from Vision")
             print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
             print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
-            command.set(1)
-    =}STAA(100msec){=
+            if vision_result.value == 1: 
+                command.set(1)
+        elif(audio_result.is_present):
+            print(f"[SENSOR FUSION] Received from Audio")
+            print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+            print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+        elif(vision_result.is_present):
+            res = "Yes" if vision_result.value == 1 else "No"
+            print(f"*** STAA *** [SENSOR FUSION] Received {res} from Vision")
+            print(f"*** STAA *** [SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+            print(f"*** STAA *** [SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+    =}STAA(500msec){=
         if(audio_result.is_present):
             print(f"*** STAA *** [SENSOR FUSION] Received from Audio")
             print(f"*** STAA *** [SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
