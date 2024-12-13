@@ -5,7 +5,7 @@ import Camera from <edgeai/Input.lf>
 import ObjectDetector from <edgeai/ComputerVision.lf>
 import AudioClassifier from <edgeai/Audio.lf>
 
-reactor AudioModule(dtype="float32", consistency_threshold=3, cooldown_period=15sec) {
+reactor AudioModule(dtype="float32", consistency_threshold=3, cooldown_period=10sec) {
 
     preamble {=
         import time
@@ -16,6 +16,7 @@ reactor AudioModule(dtype="float32", consistency_threshold=3, cooldown_period=15
 
     state consistent_detections = 0
     state detections_scores = []
+    state total_inference_time = 0
 
     logical action turn_on_mic
     
@@ -34,16 +35,26 @@ reactor AudioModule(dtype="float32", consistency_threshold=3, cooldown_period=15
     mic.audio_data -> audioClassifier.input_data after 0
 
     // ** METHOD CHAIN **
-    method validate(detection_score) {=
+    method validate(detection_score, inference_time) {=
         if self.consistent_detections < self.consistency_threshold:
             self.consistent_detections += 1
+            self.total_inference_time += inference_time
             self.detections_scores.append(detection_score)
             if self.consistent_detections == self.consistency_threshold:
                 self.consistent_detections = 0
                 detections_np = self.np.array(self.detections_scores)
                 mean_score = self.np.mean(detections_np)
-                print(f"[AUDIO MODULE] Emergency detected with score: {mean_score*100:.2f}%. Time Elapsed (physical): {lf.time.physical_elapsed()}")
+                print(
+                    f"[AUDIO MODULE] Emergency vehicle detected. "
+                    f"Average confidence score: {mean_score * 100:.2f}%. "
+                    f"Total inference time: {self.total_inference_time:.2f} ms."
+                )
+                print(
+                    f"Physical Elapsed: {lf.time.physical_elapsed()}, "
+                    f"Logical Elapsed: {lf.time.logical_elapsed()}"
+                )
                 self.detections_scores = []
+                self.total_inference_time = 0
                 return True
         return False
         
@@ -60,7 +71,7 @@ reactor AudioModule(dtype="float32", consistency_threshold=3, cooldown_period=15
             score = value["score"]
             # No need to check the score since it is already filtered thanks to ´scoree_threshold´ parameter in the AudioClassifier
             if label == "emergency":
-                can_forward = self.validate(score)
+                can_forward = self.validate(score, audioClassifier.inference_time.value)
                 if can_forward:
                     result.set(1)
                     # Turn off the microphone
@@ -101,10 +112,14 @@ reactor VisionModule(camera_id=0, consistency_threshold=3) {
             NEGATIVE = 2
     =}
 
-    camera = new Camera(camera_id={=self.camera_id=}, active_at_startup=False, sampling_interval=100msec, debug=True);
+    camera = new Camera(
+        camera_id={=self.camera_id=}, 
+        active_at_startup=False,
+        sampling_interval=40msec, 
+        debug=True);
     obj = new ObjectDetector(
         model={=self.model_path=},
-        score_threshold=0.7
+        score_threshold=0.5
     );
     trigger -> camera.trigger
     camera.camera_frame -> obj.input_data
@@ -160,7 +175,7 @@ reactor VisionModule(camera_id=0, consistency_threshold=3) {
     reaction(obj.results, obj.inference_time) -> result, camera.low_power {=
         if obj.results.is_present:
             # Extract value, label, and score if available
-            print(f"[VISION MODULE] Detected object: {obj.results.value}")
+            print(f"[VISION MODULE] Detected object: {obj.results.value}, Inference time: {obj.inference_time.value}")
             value = obj.results.value[0] if obj.results.value else None
             label = value.get("label") if value else None
             score = value.get("score") if value else None
@@ -184,21 +199,21 @@ reactor SensorFusion {
     reaction(audio_result, vision_result) -> command {=
         if(audio_result.is_present and vision_result.is_present):
             res = "Yes" if vision_result.value == 1 else "No"
-            print(f"[SENSOR FUSION] Received from Yes from Audio and {res} from Vision")
+            print(f"[SENSOR FUSION] Received Yes from Audio and {res} from Vision")
             print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
             print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
             if vision_result.value == 1: 
                 command.set(1)
         elif(audio_result.is_present):
-            print(f"[SENSOR FUSION] Received from Audio")
+            print(f"[SENSOR FUSION] Received Audio only")
             print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
             print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
         elif(vision_result.is_present):
             res = "Yes" if vision_result.value == 1 else "No"
-            print(f"*** STAA *** [SENSOR FUSION] Received {res} from Vision")
-            print(f"*** STAA *** [SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
-            print(f"*** STAA *** [SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
-    =}STAA(500msec){=
+            print(f"[SENSOR FUSION] Received {res} from Vision only")
+            print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+            print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+    =}STAA(150msec){=
         if(audio_result.is_present):
             print(f"*** STAA *** [SENSOR FUSION] Received from Audio")
             print(f"*** STAA *** [SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")

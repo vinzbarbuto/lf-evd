@@ -9,15 +9,21 @@ import AudioModule from "lib/Components.lf"
 
 
 federated reactor {
+
     audioModule = new AudioModule();
     visionModule = new VisionModule(camera_id=1);
     sensorFusion = new SensorFusion();
-    audioModule.result -> sensorFusion.audio_result after 1700 msec
+    audioModule.result -> sensorFusion.audio_result after 1580msec
     audioModule.result -> visionModule.trigger
     visionModule.result -> sensorFusion.vision_result
 
     reaction(sensorFusion.command) {=
-      print(f"[MAIN] Command received. Time Elapsed (physical): {lf.time.physical_elapsed()}")
+      print(
+        f"[MAIN] Command received. "
+        f" -- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}"
+        f" -- Physical Elapsed: {lf.time.physical_elapsed()}"
+        f" -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}"
+      )
     =}deadline(750ms){=
       print(f"[MAIN] DEADLINE")
     =}
