@@ -115,11 +115,11 @@ reactor VisionModule(camera_id=0, consistency_threshold=3) {
     camera = new Camera(
         camera_id={=self.camera_id=}, 
         active_at_startup=False,
-        sampling_interval=40msec, 
+        sampling_interval=40msec,
         debug=True);
     obj = new ObjectDetector(
         model={=self.model_path=},
-        score_threshold=0.5
+        score_threshold=0.6
     );
     trigger -> camera.trigger
     camera.camera_frame -> obj.input_data
@@ -128,6 +128,7 @@ reactor VisionModule(camera_id=0, consistency_threshold=3) {
     method validate(detection_score, inference_time, label) {=
         self.consistent_detections += 1
         self.total_inference_time += inference_time
+        print(F"[VISION MODULE] Detection N. {self.consistent_detections}, Inference time: {inference_time}")
         
         # Update detection scores if available
         if detection_score is not None:
@@ -155,6 +156,11 @@ reactor VisionModule(camera_id=0, consistency_threshold=3) {
                     f"Average confidence score: {mean_score * 100:.2f}%. "
                     f"Total inference time: {self.total_inference_time:.2f} ms."
                 )
+            elif result == self.DetectionOutcome.NEGATIVE:
+                print(
+                    f"[VISION MODULE] Detection NOT confirmed. "
+                    f"Total inference time: {self.total_inference_time:.2f} ms."
+                )
             
             # Reset variables for the next detection round
             self.reset_variables()
@@ -175,7 +181,6 @@ reactor VisionModule(camera_id=0, consistency_threshold=3) {
     reaction(obj.results, obj.inference_time) -> result, camera.low_power {=
         if obj.results.is_present:
             # Extract value, label, and score if available
-            print(f"[VISION MODULE] Detected object: {obj.results.value}, Inference time: {obj.inference_time.value}")
             value = obj.results.value[0] if obj.results.value else None
             label = value.get("label") if value else None
             score = value.get("score") if value else None
@@ -202,26 +207,31 @@ reactor SensorFusion {
             print(f"[SENSOR FUSION] Received Yes from Audio and {res} from Vision")
             print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
             print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+            print(f"[SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
             if vision_result.value == 1: 
                 command.set(1)
         elif(audio_result.is_present):
             print(f"[SENSOR FUSION] Received Audio only")
             print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
             print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+            print(f"[SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
         elif(vision_result.is_present):
             res = "Yes" if vision_result.value == 1 else "No"
             print(f"[SENSOR FUSION] Received {res} from Vision only")
             print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
             print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+            print(f"[SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
     =}STAA(150msec){=
         if(audio_result.is_present):
             print(f"*** STAA *** [SENSOR FUSION] Received from Audio")
             print(f"*** STAA *** [SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
             print(f"*** STAA *** [SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+            print(f"*** STAA *** [SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
         if(vision_result.is_present):
             res = "Yes" if vision_result.value == 1 else "No"
             print(f"*** STAA *** [SENSOR FUSION] Received {res} from Vision")
             print(f"*** STAA *** [SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
             print(f"*** STAA *** [SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+            print(f"*** STAA *** [SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
     =}
 }
