@@ -1,0 +1,51 @@
+target Python {
+  files: ["../../images/", "./utils/"]
+}
+
+reactor TrafficLightsSimulator {
+  preamble {=
+    from utils.traffic_signal import TrafficSignalController
+    from utils.ui import TrafficSignalUI
+    import threading
+    import random
+  =}
+
+  state controller
+  state ui
+  logical action traffic_lights_tick
+  logical action display_step
+
+  input signal
+
+  reaction(startup) -> display_step, traffic_lights_tick {=
+    self.controller = self.TrafficSignalController(num_signals=4)
+    self.ui = self.TrafficSignalUI(self.controller)
+    traffic_lights_tick.schedule(0)
+    display_step.schedule(MSEC(100))
+  =}
+
+  reaction(traffic_lights_tick) {=
+    self.controller.manage_signals()
+    traffic_lights_tick.schedule(SEC(1))
+  =}
+
+  reaction(signal) {=
+    lane = self.random.randint(0, 3)
+    print(f"Sending preemption message for signal {lane+1}")
+    self.ui.message_queue.put(lane)
+  =}
+
+  reaction(display_step) -> display_step {=
+    if self.ui.running:
+        self.ui.step()
+        display_step.schedule(MSEC(100))
+  =}
+
+  reaction(shutdown) {=
+    print("Shutting down")
+  =}
+}
+
+main reactor {
+  signal = new TrafficLightsSimulator()
+}
