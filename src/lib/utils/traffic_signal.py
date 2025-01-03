@@ -114,7 +114,7 @@ class TrafficSignalController:
                         if i != self.current_green:
                             self.signals[i].red += self.time_extension
             else: # Red truncation
-                current.green = 0
+                current.green = 1
                 self.preemption_queue.put((self.current_green + 1) % self.num_signals)
                 self.next_green = signal_number
 

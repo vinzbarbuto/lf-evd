@@ -30,15 +30,25 @@ reactor TrafficLightsSimulator {
   =}
 
   reaction(signal) {=
-    lane = self.random.randint(0, 3)
-    print(f"Sending preemption message for signal {lane+1}")
+    lane = signal.value
+    print(f"[SIMULATOR] Command received. Sending preemption message for signal {lane+1}")
+    print(f"[SIMULATOR] -- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+    print(f"[SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
+    print(f"[SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
     self.ui.message_queue.put(lane)
+  =} deadline(30 msec) {=
+    print(f"[SIMULATOR] DEADLINE MISSED")
+    print(f"[SIMULATOR] -- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+    print(f"[SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
+    print(f"[SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
   =}
 
   reaction(display_step) -> display_step {=
-    if self.ui.running:
+    if self.ui and self.ui.running:
         self.ui.step()
         display_step.schedule(MSEC(100))
+    else:
+        request_stop()
   =}
 
   reaction(shutdown) {=

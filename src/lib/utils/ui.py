@@ -7,8 +7,8 @@ class TrafficSignalUI:
     def __init__(self, controller, screen_size=(1400, 800)):
         self.controller = controller
         self.screen_size = screen_size
-        self.signal_coords = [(530, 230), (810, 230), (810, 570), (530, 570)]
-        self.timer_coords = [(530, 210), (810, 210), (810, 550), (530, 550)]
+        self.signal_coords = [(530, 230), (810, 280), (810, 570), (480, 550)]
+        self.timer_coords = [(510, 297), (810, 260), (810, 550), (545, 583)]
         self.message_queue = queue.Queue()  # Queue for preemption messages
         self.init_pygame()
         self.start_message_handler()
@@ -69,8 +69,10 @@ class TrafficSignalUI:
                     )
                 else:
                     image = self.red_signal
-                    signal.signalText = signal.red if signal.red <= 10 else "---"
-                self.screen.blit(image, self.signal_coords[i])
+                    signal.signalText = signal.red if signal.red <= 10 else "--"
+                rotation_angle = [180, 90, 0, 270][i] if i < 4 else 0
+                rotated_image = pygame.transform.rotate(image, rotation_angle)
+                self.screen.blit(rotated_image, self.signal_coords[i])
                 text_surface = self.font.render(
                     str(signal.signalText), True, (255, 255, 255), (0, 0, 0)
                 )
