@@ -45,7 +45,3 @@ reactor TrafficLightsSimulator {
     print("Shutting down")
   =}
 }
-
-main reactor {
-  signal = new TrafficLightsSimulator()
-}
