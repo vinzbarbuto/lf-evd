@@ -13,8 +13,6 @@ reactor TrafficLightsSimulator(STA = 10msec) {
   preamble {=
     from utils.traffic_signal import TrafficSignalController
     from utils.ui import TrafficSignalUI
-    import threading
-    import random
   =}
 
   state controller

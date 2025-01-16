@@ -104,8 +104,10 @@ class TrafficSignalController:
                     if i != self.current_green:
                         self.signals[i].red += self.time_extension
             else:
-                current.yellow += self.time_extension
-                current.red += self.time_extension
+                current.green += self.time_extension
+                self.current_yellow = 0
+                current.yellow = self.default_timers["yellow"]
+                current.red += current.yellow + self.time_extension
                 for i in range(self.num_signals):
                     if i != self.current_green:
                         self.signals[i].red += self.time_extension
