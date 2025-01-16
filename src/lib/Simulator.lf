@@ -2,7 +2,14 @@ target Python {
   files: ["../../images/", "./utils/"]
 }
 
-reactor TrafficLightsSimulator {
+/*
+ * The simulator uses an STA of 10 msec and an STAA of 0 in the external input reaction (i.e, signal input).
+ * This configuration ensures that the simulator can handle both external signals and internal timers.
+ * Since the input tag and the timer tags are not logically simultaneous, the Simulator's tag advances
+ * while the input tag lags behind, potentially causing an STAA violation. By setting the STA to 10 msec,
+ * we allow the input logical time to catch up with the Simulator's logical time, thus avoiding STAA violations.
+ */
+reactor TrafficLightsSimulator(STA = 10msec) {
   preamble {=
     from utils.traffic_signal import TrafficSignalController
     from utils.ui import TrafficSignalUI
@@ -36,7 +43,11 @@ reactor TrafficLightsSimulator {
     print(f"*** STAA *** [SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
     print(f"*** STAA *** [SIMULATOR] -- Intended tag was ({signal.intended_tag.time - lf.time.start()}, {signal.intended_tag.microstep}).")
   =} deadline (30msec){=
-    print(f"*** Deadline Missed *** [SIMULATOR] Command received too late")
+    print(f"*** DEADLINE VIOLATION *** [SIMULATOR] Command received too late")
+    print(f"*** DEADLINE VIOLATION *** [SIMULATOR] -- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+    print(f"*** DEADLINE VIOLATION *** [SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
+    print(f"*** DEADLINE VIOLATION *** [SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
+    print(f"*** DEADLINE VIOLATION *** [SIMULATOR] -- Intended tag was ({signal.intended_tag.time - lf.time.start()}, {signal.intended_tag.microstep}).")
   =}
 
   reaction(traffic_lights_tick) {=
