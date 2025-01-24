@@ -17,8 +17,8 @@ reactor TrafficLightsSimulator(STA = 10msec) {
 
   state controller
   state ui
-  timer traffic_lights_tick(10msec, 1 sec)
-  timer step(10msec, 100msec)
+  timer traffic_lights_tick(5msec, 1 sec)
+  timer step(5msec, 100msec)
 
   input signal
 
@@ -40,24 +40,24 @@ reactor TrafficLightsSimulator(STA = 10msec) {
     print(f"*** STAA *** [SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
     print(f"*** STAA *** [SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
     print(f"*** STAA *** [SIMULATOR] -- Intended tag was ({signal.intended_tag.time - lf.time.start()}, {signal.intended_tag.microstep}).")
-  =} deadline (30msec){=
+  =} deadline (50msec){=
     print(f"*** DEADLINE VIOLATION *** [SIMULATOR] Command received too late")
     print(f"*** DEADLINE VIOLATION *** [SIMULATOR] -- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
     print(f"*** DEADLINE VIOLATION *** [SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
     print(f"*** DEADLINE VIOLATION *** [SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
     print(f"*** DEADLINE VIOLATION *** [SIMULATOR] -- Intended tag was ({signal.intended_tag.time - lf.time.start()}, {signal.intended_tag.microstep}).")
   =}
-
-  reaction(traffic_lights_tick) {=
-    self.controller.manage_signals()
-  =}
-
+  
   reaction(step) {=
     try:
       if self.ui and self.ui.running:
           self.ui.step()
     except SystemExit as se:
       request_stop()
+  =}
+
+  reaction(traffic_lights_tick) {=
+    self.controller.manage_signals()
   =}
 
   reaction(shutdown) {=

@@ -5,233 +5,226 @@ import Camera from <edgeai/Input.lf>
 import ObjectDetector from <edgeai/ComputerVision.lf>
 import AudioClassifier from <edgeai/Audio.lf>
 
-reactor AudioModule(dtype="float32", consistency_threshold=3, cooldown_period=10sec) {
+reactor AudioModule(
+    microphone_id = {=None=},
+    dtype="float32",
+    model_path = {= os.path.join(os.getcwd(),"models/audio/evds_bin.tflite") =},
+    consistency_threshold=3,
+    cooldown_period = 10 sec,
+    debug=True) {
+  preamble {=
+    import time
+    import numpy as np
 
-    preamble {=
-        import time
-        import numpy as np
+    NSEC = 1000000000
+  =}
 
-        NSEC = 1000000000
-    =}
+  state consistent_detections = 0
+  state detections_scores = []
+  state total_inference_time = 0
 
-    state consistent_detections = 0
-    state detections_scores = []
-    state total_inference_time = 0
+  logical action turn_on_mic
 
-    logical action turn_on_mic
-    
-    output result
+  output result
 
+  mic = new Microphone(dtype = {= self.dtype =}, device={=self.microphone_id=} , debug={=self.debug=})
+  audioClassifier = new AudioClassifier(model = {= self.model_path =}, score_threshold=0.7)
+  mic.audio_data -> audioClassifier.input_data after 0
 
-    state model_path = {= os.path.join(os.getcwd(), 
-        "models/audio/evds_bin.tflite"
-    ) =};
-
-    mic = new Microphone(dtype= {=self.dtype=}, debug=True);
-    audioClassifier = new AudioClassifier(
-        model= {=self.model_path=},
-        score_threshold=0.7
-    );
-    mic.audio_data -> audioClassifier.input_data after 0
-
-    // ** METHOD CHAIN **
-    method validate(detection_score, inference_time) {=
-        if self.consistent_detections < self.consistency_threshold:
-            self.consistent_detections += 1
-            self.total_inference_time += inference_time
-            self.detections_scores.append(detection_score)
-            if self.consistent_detections == self.consistency_threshold:
-                self.consistent_detections = 0
-                detections_np = self.np.array(self.detections_scores)
-                mean_score = self.np.mean(detections_np)
-                print(
-                    f"[AUDIO MODULE] Emergency vehicle detected. "
-                    f"Average confidence score: {mean_score * 100:.2f}%. "
-                    f"Total inference time: {self.total_inference_time:.2f} ms."
-                )
-                print(
-                    f"Physical Elapsed: {lf.time.physical_elapsed()}, "
-                    f"Logical Elapsed: {lf.time.logical_elapsed()}"
-                )
-                self.detections_scores = []
-                self.total_inference_time = 0
-                return True
-        return False
-        
-    =}
-    
-    // ** REACTION CHAIN **
-    
-    // @label FIltering only "yes" messages
-    reaction(audioClassifier.results, audioClassifier.inference_time) -> result, mic.turn_off, turn_on_mic {=
-        # The element 1 is the custom model output
-        if audioClassifier.results.is_present and len(audioClassifier.results.value) > 1:
-            value = audioClassifier.results.value[1]
-            label = value["label"]
-            score = value["score"]
-            # No need to check the score since it is already filtered thanks to ´scoree_threshold´ parameter in the AudioClassifier
-            if label == "emergency":
-                can_forward = self.validate(score, audioClassifier.inference_time.value)
-                if can_forward:
-                    result.set(1)
-                    # Turn off the microphone
-                    mic.turn_off.set(1)
-                    # Start cooldown period
-                    cooldown_time = self.cooldown_period / self.NSEC
-                    print(f"[AUDIO MODULE] Cooldown period of {cooldown_time:.2f} seconds started")
-                    turn_on_mic.schedule(self.cooldown_period)
-    =}
-
-    reaction(turn_on_mic) -> mic.turn_on{=
-        mic.turn_on.set(1)
-    =}
-
-}
-
-reactor VisionModule(camera_id=0, consistency_threshold=3) {
-
-    input trigger
-    output result
-
-    state consistent_detections = 0
-    state positive_detections = 0
-    state detections_scores = []
-    state total_inference_time = 0
-
-    state model_path = {= os.path.join(os.getcwd(), 
-        "build/lfc_include/edgeai/models/vision/detection/ssd_mobilenet_v1.tflite"
-    ) =};
-
-    preamble {=
-        import numpy as np
-        from enum import Enum
-
-        class DetectionOutcome(Enum):
-            CONTINUE = 0
-            POSITIVE = 1
-            NEGATIVE = 2
-    =}
-
-    camera = new Camera(
-        camera_id={=self.camera_id=}, 
-        active_at_startup=False,
-        sampling_interval=40msec,
-        debug=True);
-    obj = new ObjectDetector(
-        model={=self.model_path=},
-        score_threshold=0.6
-    );
-    trigger -> camera.trigger
-    camera.camera_frame -> obj.input_data
-
-    # ** METHOD CHAIN **
-    method validate(detection_score, inference_time, label) {=
+  # ** METHOD CHAIN **
+  method validate(detection_score, inference_time) {=
+    if self.consistent_detections < self.consistency_threshold:
         self.consistent_detections += 1
         self.total_inference_time += inference_time
-        print(F"[VISION MODULE] Detection N. {self.consistent_detections}, Inference time: {inference_time}")
-        
-        # Update detection scores if available
-        if detection_score is not None:
-            self.detections_scores.append(detection_score)
-        
-        # Update positive detections count for "person" label
-        if label is not None and label == "person":
-            self.positive_detections += 1
-        
-        # Check if consistency threshold is met
+        self.detections_scores.append(detection_score)
         if self.consistent_detections == self.consistency_threshold:
-            
-            # Determine outcome based on positive detections
-            result = (
-                self.DetectionOutcome.POSITIVE
-                if self.positive_detections == self.consistency_threshold
-                else self.DetectionOutcome.NEGATIVE
+            self.consistent_detections = 0
+            detections_np = self.np.array(self.detections_scores)
+            mean_score = self.np.mean(detections_np)
+            self.debug and print(
+                f"[AUDIO MODULE] Emergency vehicle detected. "
+                f"Average confidence score: {mean_score * 100:.2f}%. "
+                f"Total inference time: {self.total_inference_time:.2f} ms."
             )
-            
-            if result == self.DetectionOutcome.POSITIVE:
-                # Calculate mean detection score
-                mean_score = self.np.mean(self.detections_scores)
-                print(
-                    f"[VISION MODULE] Positive detection confirmed. "
-                    f"Average confidence score: {mean_score * 100:.2f}%. "
-                    f"Total inference time: {self.total_inference_time:.2f} ms."
-                )
-            elif result == self.DetectionOutcome.NEGATIVE:
-                print(
-                    f"[VISION MODULE] Detection NOT confirmed. "
-                    f"Total inference time: {self.total_inference_time:.2f} ms."
-                )
-            
-            # Reset variables for the next detection round
-            self.reset_variables()
-            return result
-        
-        # Continue if threshold not reached
-        return self.DetectionOutcome.CONTINUE
-    =}
+            self.debug and print(
+                f"Physical Elapsed: {lf.time.physical_elapsed()}, "
+                f"Logical Elapsed: {lf.time.logical_elapsed()}"
+            )
+            self.detections_scores = []
+            self.total_inference_time = 0
+            return True
+    return False
+  =}
 
-    method reset_variables(){=
-        self.consistent_detections = 0
-        self.positive_detections = 0
-        self.detections_scores.clear()
-        self.total_inference_time = 0
-    =}
-    
-    # ** REACTION CHAIN **
-    reaction(obj.results, obj.inference_time) -> result, camera.low_power {=
-        if obj.results.is_present:
-            # Extract value, label, and score if available
-            value = obj.results.value[0] if obj.results.value else None
-            label = value.get("label") if value else None
-            score = value.get("score") if value else None
-            # Validate detection with extracted information
-            validate = self.validate(score, obj.inference_time.value, label)
-            
-            # Handle the result of validation
-            if validate in {self.DetectionOutcome.POSITIVE, self.DetectionOutcome.NEGATIVE}:
-                result.set(1 if validate == self.DetectionOutcome.POSITIVE else 0)
-                camera.low_power.set(1)
-    =}
+  # ** REACTION CHAIN **
+  # @label FIltering only "yes" messages
+  reaction(audioClassifier.results, audioClassifier.inference_time) ->
+  result, mic.turn_off, turn_on_mic {=
+    # The element 1 is the custom model output
+    if audioClassifier.results.is_present and len(audioClassifier.results.value) > 1:
+        value = audioClassifier.results.value[1]
+        label = value["label"]
+        score = value["score"]
+        # No need to check the score since it is already filtered thanks to ´scoree_threshold´ parameter in the AudioClassifier
+        if label == "emergency":
+            can_forward = self.validate(score, audioClassifier.inference_time.value)
+            if can_forward:
+                result.set(1)
+                # Turn off the microphone
+                mic.turn_off.set(1)
+                # Start cooldown period
+                cooldown_time = self.cooldown_period / self.NSEC
+                self.debug and print(f"[AUDIO MODULE] Cooldown period of {cooldown_time:.2f} seconds started")
+                turn_on_mic.schedule(self.cooldown_period)
+  =}
 
+  reaction(turn_on_mic) -> mic.turn_on {=
+    mic.turn_on.set(1)
+  =}
+}
+
+reactor VisionModule(
+    camera_id=0,
+    model_path = {=
+      os.path.join(os.getcwd(),"build/lfc_include/edgeai/models/vision/detection/ssd_mobilenet_v1.tflite")
+    =},
+    consistency_threshold=3,
+    enable_edgetpu=False,
+    debug=True) {
+  input trigger
+  output result
+
+  state consistent_detections = 0
+  state positive_detections = 0
+  state detections_scores = []
+  state total_inference_time = 0
+
+  preamble {=
+    import numpy as np
+    from enum import Enum
+
+    class DetectionOutcome(Enum):
+        CONTINUE = 0
+        POSITIVE = 1
+        NEGATIVE = 2
+  =}
+
+  camera = new Camera(
+      camera_id = {= self.camera_id =},
+      active_at_startup=False,
+      sampling_interval = 40 msec,
+      debug={=self.debug=})
+  obj = new ObjectDetector(model = {= self.model_path =}, score_threshold=0.6, enable_edgetpu={=self.enable_edgetpu=})
+  trigger -> camera.trigger
+  camera.camera_frame -> obj.input_data
+
+  # ** METHOD CHAIN **
+  method validate(detection_score, inference_time, label) {=
+    self.consistent_detections += 1
+    self.total_inference_time += inference_time
+    self.debug and print(F"[VISION MODULE] Detection N. {self.consistent_detections}, Inference time: {inference_time}")
+
+    # Update detection scores if available
+    if detection_score is not None:
+        self.detections_scores.append(detection_score)
+
+    # Update positive detections count for "person" label
+    if label is not None and label == "person":
+        self.positive_detections += 1
+
+    # Check if consistency threshold is met
+    if self.consistent_detections == self.consistency_threshold:
+
+        # Determine outcome based on positive detections
+        result = (
+            self.DetectionOutcome.POSITIVE
+            if self.positive_detections == self.consistency_threshold
+            else self.DetectionOutcome.NEGATIVE
+        )
+
+        if result == self.DetectionOutcome.POSITIVE:
+            # Calculate mean detection score
+            mean_score = self.np.mean(self.detections_scores)
+            self.debug and print(
+                f"[VISION MODULE] Positive detection confirmed. "
+                f"Average confidence score: {mean_score * 100:.2f}%. "
+                f"Total inference time: {self.total_inference_time:.2f} ms."
+            )
+        elif result == self.DetectionOutcome.NEGATIVE:
+            self.debug and print(
+                f"[VISION MODULE] Detection NOT confirmed. "
+                f"Total inference time: {self.total_inference_time:.2f} ms."
+            )
+
+        # Reset variables for the next detection round
+        self.reset_variables()
+        return result
+
+    # Continue if threshold not reached
+    return self.DetectionOutcome.CONTINUE
+  =}
+
+  method reset_variables() {=
+    self.consistent_detections = 0
+    self.positive_detections = 0
+    self.detections_scores.clear()
+    self.total_inference_time = 0
+  =}
+
+  # ** REACTION CHAIN **
+  reaction(obj.results, obj.inference_time) -> result, camera.low_power {=
+    if obj.results.is_present:
+        # Extract value, label, and score if available
+        value = obj.results.value[0] if obj.results.value else None
+        label = value.get("label") if value else None
+        score = value.get("score") if value else None
+        # Validate detection with extracted information
+        validate = self.validate(score, obj.inference_time.value, label)
+
+        # Handle the result of validation
+        if validate in {self.DetectionOutcome.POSITIVE, self.DetectionOutcome.NEGATIVE}:
+            result.set(1 if validate == self.DetectionOutcome.POSITIVE else 0)
+            camera.low_power.set(1)
+  =}
 }
 
 reactor SensorFusion {
-    input audio_result
-    input vision_result
+  input audio_result
+  input vision_result
 
-    output command
+  output command
 
-    reaction(audio_result, vision_result) -> command {=
-        if(audio_result.is_present and vision_result.is_present):
-            res = "Yes" if vision_result.value == 1 else "No"
-            print(f"[SENSOR FUSION] Received Yes from Audio and {res} from Vision")
-            print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
-            print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
-            print(f"[SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
-            if vision_result.value == 1: 
-                command.set(1)
-        elif(audio_result.is_present):
-            print(f"[SENSOR FUSION] Received Audio only")
-            print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
-            print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
-            print(f"[SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
-        elif(vision_result.is_present):
-            res = "Yes" if vision_result.value == 1 else "No"
-            print(f"[SENSOR FUSION] Received {res} from Vision only")
-            print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
-            print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
-            print(f"[SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
-    =}STAA(150msec){=
-        if(audio_result.is_present):
-            print(f"*** STAA *** [SENSOR FUSION] Received from Audio")
-            print(f"*** STAA *** [SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
-            print(f"*** STAA *** [SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
-            print(f"*** STAA *** [SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
-        if(vision_result.is_present):
-            res = "Yes" if vision_result.value == 1 else "No"
-            print(f"*** STAA *** [SENSOR FUSION] Received {res} from Vision")
-            print(f"*** STAA *** [SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
-            print(f"*** STAA *** [SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
-            print(f"*** STAA *** [SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
-    =}
+  reaction(audio_result, vision_result) -> command {=
+    if(audio_result.is_present and vision_result.is_present):
+        res = "Yes" if vision_result.value == 1 else "No"
+        print(f"[SENSOR FUSION] Received Yes from Audio and {res} from Vision")
+        print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+        print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+        print(f"[SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
+        if vision_result.value == 1:
+            command.set(1)
+    elif(audio_result.is_present):
+        print(f"[SENSOR FUSION] Received Audio only")
+        print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+        print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+        print(f"[SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
+    elif(vision_result.is_present):
+        res = "Yes" if vision_result.value == 1 else "No"
+        print(f"[SENSOR FUSION] Received {res} from Vision only")
+        print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+        print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+        print(f"[SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
+  =} STAA(150 msec) {=
+    if(audio_result.is_present):
+        print(f"*** STAA *** [SENSOR FUSION] Received from Audio")
+        print(f"*** STAA *** [SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+        print(f"*** STAA *** [SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+        print(f"*** STAA *** [SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
+    if(vision_result.is_present):
+        res = "Yes" if vision_result.value == 1 else "No"
+        print(f"*** STAA *** [SENSOR FUSION] Received {res} from Vision")
+        print(f"*** STAA *** [SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+        print(f"*** STAA *** [SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+        print(f"*** STAA *** [SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
+  =}
 }
