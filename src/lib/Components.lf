@@ -4,13 +4,16 @@ import Microphone from <edgeai/Input.lf>
 import Camera from <edgeai/Input.lf>
 import ObjectDetector from <edgeai/ComputerVision.lf>
 import AudioClassifier from <edgeai/Audio.lf>
+import TrafficLightsSimulator from "Simulator.lf"
 
 reactor AudioModule(
-    microphone_id = {=None=},
+    microphone_id = {= None =},
     dtype="float32",
     model_path = {= os.path.join(os.getcwd(),"models/audio/evds_bin.tflite") =},
     consistency_threshold=3,
     cooldown_period = 10 sec,
+    score_threshold=0.7,
+    enable_edgetpu=False,
     debug=True) {
   preamble {=
     import time
@@ -23,12 +26,19 @@ reactor AudioModule(
   state detections_scores = []
   state total_inference_time = 0
 
+  logical action send_result
   logical action turn_on_mic
 
   output result
 
-  mic = new Microphone(dtype = {= self.dtype =}, device={=self.microphone_id=} , debug={=self.debug=})
-  audioClassifier = new AudioClassifier(model = {= self.model_path =}, score_threshold=0.7)
+  mic = new Microphone(
+      dtype = {= self.dtype =},
+      device = {= self.microphone_id =},
+      debug = {= self.debug =})
+  audioClassifier = new AudioClassifier(
+      model = {= self.model_path =},
+      score_threshold = {= self.score_threshold =},
+      enable_edgetpu = {= self.enable_edgetpu =})
   mic.audio_data -> audioClassifier.input_data after 0
 
   # ** METHOD CHAIN **
@@ -45,10 +55,6 @@ reactor AudioModule(
                 f"[AUDIO MODULE] Emergency vehicle detected. "
                 f"Average confidence score: {mean_score * 100:.2f}%. "
                 f"Total inference time: {self.total_inference_time:.2f} ms."
-            )
-            self.debug and print(
-                f"Physical Elapsed: {lf.time.physical_elapsed()}, "
-                f"Logical Elapsed: {lf.time.logical_elapsed()}"
             )
             self.detections_scores = []
             self.total_inference_time = 0
@@ -69,9 +75,12 @@ reactor AudioModule(
         if label == "emergency":
             can_forward = self.validate(score, audioClassifier.inference_time.value)
             if can_forward:
-                result.set(1)
+                self.debug and print("[AUDIO MODULE] Sending positive result")
+                self.debug and print(f"[AUDIO MODULE] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+                self.debug and print(f"[AUDIO MODULE] --- Physical Elapsed: {lf.time.physical_elapsed()}")
                 # Turn off the microphone
                 mic.turn_off.set(1)
+                result.set(1)
                 # Start cooldown period
                 cooldown_time = self.cooldown_period / self.NSEC
                 self.debug and print(f"[AUDIO MODULE] Cooldown period of {cooldown_time:.2f} seconds started")
@@ -88,7 +97,9 @@ reactor VisionModule(
     model_path = {=
       os.path.join(os.getcwd(),"build/lfc_include/edgeai/models/vision/detection/ssd_mobilenet_v1.tflite")
     =},
+    sampling_interval = 40 msec,
     consistency_threshold=3,
+    score_threshold=0.6,
     enable_edgetpu=False,
     debug=True) {
   input trigger
@@ -112,9 +123,12 @@ reactor VisionModule(
   camera = new Camera(
       camera_id = {= self.camera_id =},
       active_at_startup=False,
-      sampling_interval = 40 msec,
-      debug={=self.debug=})
-  obj = new ObjectDetector(model = {= self.model_path =}, score_threshold=0.6, enable_edgetpu={=self.enable_edgetpu=})
+      sampling_interval = {= self.sampling_interval =},
+      debug = {= self.debug =})
+  obj = new ObjectDetector(
+      model = {= self.model_path =},
+      score_threshold = {= self.score_threshold =},
+      enable_edgetpu = {= self.enable_edgetpu =})
   trigger -> camera.trigger
   camera.camera_frame -> obj.input_data
 
@@ -183,9 +197,55 @@ reactor VisionModule(
 
         # Handle the result of validation
         if validate in {self.DetectionOutcome.POSITIVE, self.DetectionOutcome.NEGATIVE}:
+            self.debug and print("[VISION MODULE] Sending result")
+            self.debug and print(f"[VISION MODULE] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+            self.debug and print(f"[VISION MODULE] --- Physical Elapsed: {lf.time.physical_elapsed()}")
             result.set(1 if validate == self.DetectionOutcome.POSITIVE else 0)
             camera.low_power.set(1)
   =}
+}
+
+reactor LiteVisionModule(
+    camera_id=0,
+    sampling_interval = 60 msec,
+    consistency_threshold=3,
+    debug=True) {
+  input trigger
+  output output_frame
+
+  state frame_sent = 0
+  logical action low_power
+
+  preamble {=
+    import cv2
+    import pickle
+  =}
+
+  camera = new Camera(
+      camera_id = {= self.camera_id =},
+      active_at_startup=False,
+      sampling_interval = {= self.sampling_interval =},
+      debug = {= self.debug =})
+
+  trigger -> camera.trigger
+
+  reaction(camera.camera_frame) -> output_frame, camera.low_power {=
+    if camera.camera_frame.is_present and self.frame_sent < self.consistency_threshold:
+        frame = camera.camera_frame.value
+        encode_param = [int(self.cv2.IMWRITE_JPEG_QUALITY), 90]
+        self.debug and print(f"Encoding frame to JPEG with quality {encode_param[1]}...")
+        result, encoded_img = self.cv2.imencode(".jpg", frame, encode_param)
+        serialized_img = self.pickle.dumps(encoded_img)
+        output_frame.set(serialized_img)
+        self.frame_sent += 1
+        if self.frame_sent >= self.consistency_threshold:
+          self.frame_sent = 0
+          camera.low_power.set(1)
+    else:
+        self.frame_sent = 0
+        camera.low_power.set(1)
+  =}
+
 }
 
 reactor SensorFusion {
@@ -214,7 +274,7 @@ reactor SensorFusion {
         print(f"[SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
         print(f"[SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
         print(f"[SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
-  =} STAA(150 msec) {=
+  =} STAA(0) {=
     if(audio_result.is_present):
         print(f"*** STAA *** [SENSOR FUSION] Received from Audio")
         print(f"*** STAA *** [SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
@@ -226,5 +286,172 @@ reactor SensorFusion {
         print(f"*** STAA *** [SENSOR FUSION] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
         print(f"*** STAA *** [SENSOR FUSION] --- Physical Elapsed: {lf.time.physical_elapsed()}")
         print(f"*** STAA *** [SENSOR FUSION] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
+        print(f"*** STAA *** [SENSOR FUSION] -- Intended tag was ({vision_result.intended_tag.time - lf.time.start()}, {vision_result.intended_tag.microstep}).")
   =}
+}
+
+reactor CloudDetector(
+    model_path = {=
+      os.path.join(os.getcwd(),"build/lfc_include/edgeai/models/vision/detection/ssd_mobilenet_v1.tflite")
+    =},
+    consistency_threshold=3,
+    score_threshold=0.6,
+    debug=True) {
+  input frame
+  output result
+
+  state consistent_detections = 0
+  state positive_detections = 0
+  state detections_scores = []
+  state total_inference_time = 0
+
+  preamble {=
+    import numpy as np
+    import cv2
+    import pickle
+    from enum import Enum
+
+    class DetectionOutcome(Enum):
+        CONTINUE = 0
+        POSITIVE = 1
+        NEGATIVE = 2
+  =}
+
+  detector = new ObjectDetector(
+      model = {= self.model_path =},
+      score_threshold = {= self.score_threshold =},
+      debug = {= self.debug =})
+
+  # ** METHOD CHAIN **
+  method validate(detection_score, inference_time, label) {=
+    self.consistent_detections += 1
+    self.total_inference_time += inference_time
+    self.debug and print(F"[CLOUD DETECTOR] Detection N. {self.consistent_detections}, Inference time: {inference_time}")
+
+    # Update detection scores if available
+    if detection_score is not None:
+        self.detections_scores.append(detection_score)
+
+    # Update positive detections count for "person" label
+    if label is not None and label == "person":
+        self.positive_detections += 1
+
+    # Check if consistency threshold is met
+    if self.consistent_detections == self.consistency_threshold:
+
+        # Determine outcome based on positive detections
+        result = (
+            self.DetectionOutcome.POSITIVE
+            if self.positive_detections == self.consistency_threshold
+            else self.DetectionOutcome.NEGATIVE
+        )
+
+        if result == self.DetectionOutcome.POSITIVE:
+            # Calculate mean detection score
+            mean_score = self.np.mean(self.detections_scores)
+            self.debug and print(
+                f"[CLOUD DETECTOR] Positive detection confirmed. "
+                f"Average confidence score: {mean_score * 100:.2f}%. "
+                f"Total inference time: {self.total_inference_time:.2f} ms."
+            )
+        elif result == self.DetectionOutcome.NEGATIVE:
+            self.debug and print(
+                f"[CLOUD DETECTOR] Detection NOT confirmed. "
+                f"Total inference time: {self.total_inference_time:.2f} ms."
+            )
+
+        # Reset variables for the next detection round
+        self.reset_variables()
+        return result
+
+    # Continue if threshold not reached
+    return self.DetectionOutcome.CONTINUE
+  =}
+
+  method reset_variables() {=
+    self.consistent_detections = 0
+    self.positive_detections = 0
+    self.detections_scores.clear()
+    self.total_inference_time = 0
+  =}
+
+  # ** REACTION CHAIN **
+  reaction(frame) -> detector.input_data {=
+    if frame.is_present:
+        print(f"[CLOUD DETECTOR] Frame received")
+        print(f"[CLOUD DETECTOR] --- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+        print(f"[CLOUD DETECTOR] --- Physical Elapsed: {lf.time.physical_elapsed()}")
+        print(f"[CLOUD DETECTOR] --- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
+        serialized_frame = frame.value
+        encoded_frame = self.pickle.loads(serialized_frame)
+        decoded_img = self.cv2.imdecode(encoded_frame, self.cv2.IMREAD_COLOR)
+        detector.input_data.set(decoded_img)
+  =}
+
+  reaction(detector.results, detector.inference_time) -> result {=
+    if detector.results.is_present:
+        # Extract value, label, and score if available
+        value = detector.results.value[0] if detector.results.value else None
+        label = value.get("label") if value else None
+        score = value.get("score") if value else None
+        # Validate detection with extracted information
+        validate = self.validate(score, detector.inference_time.value, label)
+
+        # Handle the result of validation
+        if validate in {self.DetectionOutcome.POSITIVE, self.DetectionOutcome.NEGATIVE}:
+            result.set(1 if validate == self.DetectionOutcome.POSITIVE else 0)
+  =}
+}
+
+reactor CoralDevBoard(
+    camera_id=1,
+    microphone_id = {= None =},
+    vision_model_path="/home/mendel/models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite",
+    audio_model_path="/home/mendel/models/evds_bin.tflite",
+    debug=True) {
+  output command
+  audioModule = new AudioModule(
+      microphone_id = {= self.microphone_id =},
+      model_path = {= self.audio_model_path =})
+  visionModule = new VisionModule(
+      camera_id = {= self.camera_id =},
+      model_path = {= self.vision_model_path =},
+      enable_edgetpu=True)
+  sensorFusion = new SensorFusion()
+  audioModule.result -> sensorFusion.audio_result after 80 msec
+  audioModule.result -> visionModule.trigger
+  visionModule.result -> sensorFusion.vision_result
+  sensorFusion.command -> command
+}
+
+reactor CoralDevBoardOffload(
+    STA = 20msec,
+    camera_id=1,
+    microphone_id = {= None =},
+    audio_model_path="/home/mendel/models/evds_md_edgetpu.tflite",
+    debug=True) {
+  input result
+  output frame
+  output command
+
+  audioModule = new AudioModule(
+      microphone_id = {= self.microphone_id =},
+      cooldown_period = 10 sec,
+      model_path={=self.audio_model_path=},
+      enable_edgetpu=True,
+      debug={=self.debug=})
+  visionModule = new LiteVisionModule(camera_id={=self.camera_id=}, debug={=self.debug=})
+  sensorFusion = new SensorFusion()
+  audioModule.result -> sensorFusion.audio_result after 220 msec
+  audioModule.result -> visionModule.trigger
+  visionModule.output_frame -> frame
+  result -> sensorFusion.vision_result
+  sensorFusion.command -> command
+  
+}
+
+reactor Controller {
+  input command
+  simulator = new TrafficLightsSimulator()
+  command -> simulator.signal
 }

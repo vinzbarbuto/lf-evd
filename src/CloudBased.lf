@@ -1,0 +1,19 @@
+target Python {
+    coordination: decentralized,
+    tracing: True
+}
+import Controller from "lib/Components.lf"
+import CoralDevBoardOffload from "lib/Components.lf"
+import CloudDetector from "lib/Components.lf"
+
+federated reactor at 192.168.1.243{
+    controller = new Controller();
+    board = new CoralDevBoardOffload() at mendel@192.168.1.244;
+    detector = new CloudDetector(
+        model_path="/Users/vincenzobarbuto/Desktop/LinguaFranca/lf-evd/build/lfc_include/edgeai/models/vision/detection/ssd_mobilenet_v1.tflite",
+        debug=True
+    );
+    board.frame -> detector.frame
+    detector.result -> board.result after 100 msec
+    board.command -> controller.command
+}
