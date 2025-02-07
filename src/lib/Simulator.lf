@@ -2,14 +2,7 @@ target Python {
   files: ["../../images/", "./utils/"]
 }
 
-/*
- * The simulator uses an STA of 15 msec and an STAA of 0 in the external input reaction (i.e, signal input).
- * This configuration ensures that the simulator can handle both external signals and internal timers.
- * Since the input tag and the timer tags are not logically simultaneous, the Simulator's tag advances
- * while the input tag lags behind, potentially causing an STAA violation. By setting the STA to 15 msec,
- * we allow the input logical time to catch up with the Simulator's logical time, thus avoiding STAA violations.
- */
-reactor TrafficLightsSimulator(STA = 15 msec) {
+reactor TrafficLightsSimulator {
   preamble {=
     from utils.traffic_signal import TrafficSignalController
     from utils.ui import TrafficSignalUI
@@ -18,7 +11,7 @@ reactor TrafficLightsSimulator(STA = 15 msec) {
   state controller
   state ui
   timer traffic_lights_tick(10msec, 1 sec)
-  timer step(5msec, 100msec)
+  timer step(10msec, 100msec)
 
   input signal
 
@@ -40,12 +33,6 @@ reactor TrafficLightsSimulator(STA = 15 msec) {
     print(f"*** STAA *** [SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
     print(f"*** STAA *** [SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
     print(f"*** STAA *** [SIMULATOR] -- Intended tag was ({signal.intended_tag.time - lf.time.start()}, {signal.intended_tag.microstep}).")
-  =} deadline (50msec){=
-    print(f"*** DEADLINE VIOLATION *** [SIMULATOR] Command received too late")
-    print(f"*** DEADLINE VIOLATION *** [SIMULATOR] -- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
-    print(f"*** DEADLINE VIOLATION *** [SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
-    print(f"*** DEADLINE VIOLATION *** [SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
-    print(f"*** DEADLINE VIOLATION *** [SIMULATOR] -- Intended tag was ({signal.intended_tag.time - lf.time.start()}, {signal.intended_tag.microstep}).")
   =}
   
   reaction(step) {=

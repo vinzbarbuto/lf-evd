@@ -1,5 +1,6 @@
 target Python {
-  coordination: decentralized
+  coordination: decentralized,
+  tracing: true
 }
 
 import CoralDevBoard from "lib/Components.lf"
@@ -8,5 +9,5 @@ import Controller from "lib/Components.lf"
 federated reactor at 192.168.1.243{
   controller = new Controller();
   board = new CoralDevBoard() at mendel@192.168.1.244;
-  board.command -> controller.command
+  board.command -> controller.command after 20msec;
 }
