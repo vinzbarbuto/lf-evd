@@ -6,41 +6,39 @@ reactor TrafficLightsSimulator {
   preamble {=
     from utils.traffic_signal import TrafficSignalController
     from utils.ui import TrafficSignalUI
+    import threading
   =}
 
   state controller
   state ui
+  state initialized = False
   timer traffic_lights_tick(10msec, 1 sec)
   timer step(10msec, 100msec)
-
+  
   input signal
 
   reaction(startup) {=
     self.controller = self.TrafficSignalController(num_signals=4)
     self.ui = self.TrafficSignalUI(self.controller)
+    self.initialized = False
   =}
 
-  reaction(signal) {=
-    lane = signal.value
-    print(f"[SIMULATOR] Command received. Sending preemption message for signal {lane+1}")
-    print(f"[SIMULATOR] -- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
-    print(f"[SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
-    print(f"[SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
-    self.controller.preemption(lane)
-  =} STAA(0) {=
-    print(f"*** STAA *** [SIMULATOR] Command received too late")
-    print(f"*** STAA *** [SIMULATOR] -- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
-    print(f"*** STAA *** [SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
-    print(f"*** STAA *** [SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
-    print(f"*** STAA *** [SIMULATOR] -- Intended tag was ({signal.intended_tag.time - lf.time.start()}, {signal.intended_tag.microstep}).")
-  =}
-  
   reaction(step) {=
     try:
-      if self.ui and self.ui.running:
-          self.ui.step()
-    except SystemExit as se:
-      request_stop()
+        if not self.initialized and self.threading.current_thread() is self.threading.main_thread():
+            self.ui.init_pygame()
+            self.initialized = True
+            
+        if self.ui and self.ui.running:
+            start = lf.time.physical_elapsed()
+            self.ui.step()
+            print(f"[SIMULATOR] UI step took {lf.time.physical_elapsed() - start} seconds")
+    except SystemExit:
+        request_stop()
+    except Exception as e:
+        print(f"Error in UI step: {e}")
+        self.ui.cleanup()
+        request_stop()
   =}
 
   reaction(traffic_lights_tick) {=
@@ -49,5 +47,7 @@ reactor TrafficLightsSimulator {
 
   reaction(shutdown) {=
     print("[SIMULATOR] Shutting down")
+    if hasattr(self, "ui") and self.ui:
+        self.ui.cleanup()
   =}
 }

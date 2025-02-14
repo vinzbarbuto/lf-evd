@@ -425,7 +425,7 @@ reactor CoralDevBoard(
 }
 
 reactor CoralDevBoardOffload(
-    STA = 20msec,
+    # STA = 20msec,
     camera_id=1,
     microphone_id = {= None =},
     audio_model_path="/home/mendel/models/evds_md_edgetpu.tflite",

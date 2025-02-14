@@ -7,6 +7,7 @@ import CoralDevBoardOffload from "lib/Components.lf"
 import CloudDetector from "lib/Components.lf"
 
 federated reactor at 192.168.1.243{
+    
     controller = new Controller();
     board = new CoralDevBoardOffload() at mendel@192.168.1.244;
     detector = new CloudDetector(
@@ -15,5 +16,5 @@ federated reactor at 192.168.1.243{
     );
     board.frame -> detector.frame
     detector.result -> board.result after 100 msec
-    board.command -> controller.command
+    board.command -> controller.command after 30 msec
 }
