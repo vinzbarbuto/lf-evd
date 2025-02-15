@@ -19,8 +19,30 @@ reactor TrafficLightsSimulator {
 
   reaction(startup) {=
     self.controller = self.TrafficSignalController(num_signals=4)
+    # Create UI instance but defer initialization
     self.ui = self.TrafficSignalUI(self.controller)
     self.initialized = False
+  =}
+
+  reaction(signal) {=
+    lane = signal.value
+    print(f"[SIMULATOR] Command received. Sending preemption message for signal {lane+1}")
+    print(f"[SIMULATOR] -- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+    print(f"[SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
+    print(f"[SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
+    self.controller.preemption(lane)
+  =} STAA(0) {=
+    print(f"*** STAA *** [SIMULATOR] Command received too late")
+    print(f"*** STAA *** [SIMULATOR] -- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+    print(f"*** STAA *** [SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
+    print(f"*** STAA *** [SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
+    print(f"*** STAA *** [SIMULATOR] -- Intended tag was ({signal.intended_tag.time - lf.time.start()}, {signal.intended_tag.microstep}).")
+  =} deadline (50 msec) {=
+    print(f"*** DEADLINE *** [SIMULATOR] Command received too late")
+    print(f"*** DEADLINE *** [SIMULATOR] -- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
+    print(f"*** DEADLINE *** [SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
+    print(f"*** DEADLINE *** [SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
+    print(f"*** DEADLINE *** [SIMULATOR] -- Intended tag was ({signal.intended_tag.time - lf.time.start()}, {signal.intended_tag.microstep}).")
   =}
 
   reaction(step) {=
@@ -51,3 +73,4 @@ reactor TrafficLightsSimulator {
         self.ui.cleanup()
   =}
 }
+

@@ -13,4 +13,4 @@ fast = false
 
 [dependencies]
 
-edgeai = {version = ">=0.4.0", git = "https://github.com/lf-pkgs/edgeai-python.git"}
+edgeai = {version = ">=0.4.0", git = "https://github.com/lf-lang/edgeai-python"}
