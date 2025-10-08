@@ -1,0 +1,29 @@
+target Python{
+    coordination: decentralized
+}
+
+import AudioModule from "lib/Components.lf"
+import SensorFusion from "lib/Components.lf"
+import VisionModule from "lib/Components.lf"
+import Controller from "lib/Components.lf"
+
+reactor CoralDevBoard {
+    input vision_result
+    output command
+    output frame_capturing
+    audio = new AudioModule();
+    fusion = new SensorFusion();
+    audio.result -> fusion.audio_result
+    fusion.command -> command
+    audio.result -> frame_capturing
+    vision_result-> fusion.vision_result 
+}
+
+federated reactor at 192.168.0.25{
+    board = new CoralDevBoard() at mendel@192.168.0.25;
+    vision = new VisionModule() at 192.168.0.25;
+    controller = new Controller() at 192.168.0.25;
+    board.frame_capturing -> vision.trigger
+    vision.result -> board.vision_result
+    board.command -> controller.command
+}

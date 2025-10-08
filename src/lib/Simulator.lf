@@ -37,7 +37,7 @@ reactor TrafficLightsSimulator {
     print(f"*** STAA *** [SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
     print(f"*** STAA *** [SIMULATOR] -- Lag: {lf.time.physical_elapsed() - lf.time.logical_elapsed()}")
     print(f"*** STAA *** [SIMULATOR] -- Intended tag was ({signal.intended_tag.time - lf.time.start()}, {signal.intended_tag.microstep}).")
-  =} deadline (50 msec) {=
+  =} deadline (100 msec) {=
     print(f"*** DEADLINE *** [SIMULATOR] Command received too late")
     print(f"*** DEADLINE *** [SIMULATOR] -- Logical Elapsed: {lf.time.logical_elapsed()}. Microstep is {lf.tag().microstep}")
     print(f"*** DEADLINE *** [SIMULATOR] -- Physical Elapsed: {lf.time.physical_elapsed()}")
@@ -54,7 +54,7 @@ reactor TrafficLightsSimulator {
         if self.ui and self.ui.running:
             start = lf.time.physical_elapsed()
             self.ui.step()
-            print(f"[SIMULATOR] UI step took {lf.time.physical_elapsed() - start} seconds")
+            # print(f"[SIMULATOR] UI step took {lf.time.physical_elapsed() - start} seconds")
     except SystemExit:
         request_stop()
     except Exception as e:

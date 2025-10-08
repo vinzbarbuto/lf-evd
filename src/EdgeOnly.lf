@@ -1,13 +1,13 @@
 target Python {
   coordination: decentralized,
-  tracing: true
+  tracing: True
 }
 
 import CoralDevBoard from "lib/Components.lf"
 import Controller from "lib/Components.lf"
 
-federated reactor at 192.168.1.243{
+federated reactor at 192.168.0.32{
   controller = new Controller();
-  board = new CoralDevBoard() at mendel@192.168.1.244;
+  board = new CoralDevBoard() at mendel@192.168.0.25;
   board.command -> controller.command after 30msec;
 }

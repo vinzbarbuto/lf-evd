@@ -450,8 +450,20 @@ reactor CoralDevBoardOffload(
   
 }
 
+reactor SMBoard(
+  camera_id=1,
+  microphone_id = {= None =},
+  vision_model_path="/home/mendel/models/ssd_mobilenet_v2_coco_quant_postprocess_edgetpu.tflite",
+  audio_model_path="/home/mendel/models/evds_bin.tflite",
+  debug=True
+){
+
+}
+
 reactor Controller {
   input command
   simulator = new TrafficLightsSimulator()
   command -> simulator.signal
 }
+
+

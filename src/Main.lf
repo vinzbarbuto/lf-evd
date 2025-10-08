@@ -10,7 +10,7 @@ import TrafficLightsSimulator from "lib/Simulator.lf"
 federated reactor {
   simulator = new TrafficLightsSimulator()
   audioModule = new AudioModule()
-  visionModule = new VisionModule(camera_id=0)
+  visionModule = new VisionModule(camera_id=0, model_path="/Users/vincenzobarbuto/Desktop/TFLiteAPITest/vision/efficientdet_lite0_320_ptq_metadata.tflite")
   sensorFusion = new SensorFusion()
   audioModule.result -> sensorFusion.audio_result after 80 msec
   audioModule.result -> visionModule.trigger
